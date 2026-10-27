@@ -1,0 +1,57 @@
+@import '@fontsource-variable/manrope';
+@import 'tailwindcss';
+
+/* ---- Design tokens ----
+   One accent (navy) on cool neutrals. Semantic colours are used only to carry meaning (success / warning / error). */
+@theme {
+  --font-sans: 'Manrope Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-navy-950: #0c1b33;
+  --color-navy-900: #13294b;
+  --color-navy-800: #1b3865;
+  --color-navy-700: #25497f;
+  --color-navy-100: #e4ebf6;
+  --color-navy-50: #f0f4fa;
+
+  --color-ink: #172033;
+  --color-muted: #566074;
+  --color-line: #e2e6ee;
+  --color-canvas: #f6f8fb;
+  --color-surface: #ffffff;
+
+  --color-ok: #17734f;
+  --color-ok-bg: #e5f4ec;
+  --color-warn: #8a5a0b;
+  --color-warn-bg: #fbf0d9;
+  --color-bad: #a8341d;
+  --color-bad-bg: #fbe9e5;
+
+  /* Different radii for different layers of the UI: shell > card > control. */
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.5rem;
+}
+
+html { color-scheme: light; }
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { letter-spacing: -0.02em; text-wrap: balance; }
+p { text-wrap: pretty; }
+
+/* Visible keyboard focus everywhere, without showing rings on mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--color-navy-700);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

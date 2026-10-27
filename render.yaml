@@ -1,0 +1,22 @@
+# Render blueprint for the API. NOT deployed or validated from the build environment: review before use.
+services:
+  - type: web
+    name: placementprep-api
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - { key: NODE_VERSION, value: "22" }
+      - { key: NODE_ENV, value: production }
+      - { key: JWT_SECRET, generateValue: true }
+      - { key: MONGODB_URI, sync: false }       # Atlas connection string (set in the Render dashboard)
+      - { key: CLIENT_URL, sync: false }        # exact origin of the frontend, e.g. https://app.example.com
+      - { key: COOKIE_SAMESITE, value: lax }    # use "none" only for cross-site hosting (see docs/DEPLOYMENT.md)
+      - { key: GEMINI_API_KEY, sync: false }
+      - { key: LLM_MODEL, sync: false }
+      - { key: EMBEDDING_MODEL, sync: false }
+      - { key: EMBEDDING_DIMENSIONS, sync: false }
+      - { key: VECTOR_SEARCH_MODE, value: atlas }

@@ -1,0 +1,12 @@
+{
+  "name": "placementprep-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Full-stack browser test against a local Gemini-format fake (never contacts Google)",
+  "scripts": {
+    "start": "node analyzer.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.14.0"
+  }
+}
