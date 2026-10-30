@@ -1,19 +1,25 @@
 import { env } from '../config/env.js';
-import { AppError } from '../utils/AppError.js';
 
-const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+export const originCheck = (req, res, next) => {
+  const allowedOrigins = [
+    'https://placement-prep-ai-inky.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
 
-/**
- * Defence in depth against CSRF. Browsers always attach an Origin header to cross-site POSTs.
- * If one arrives from an origin other than our frontend, reject it.
- * Requests with no Origin (curl, Postman, server-to-server) are allowed: CSRF is a browser-only attack.
- */
-export function originCheck(req, _res, next) {
-  if (UNSAFE_METHODS.has(req.method)) {
-    const origin = req.get('origin');
-    if (origin && origin !== env.CLIENT_ORIGIN) {
-      throw new AppError(403, 'ORIGIN_NOT_ALLOWED', 'Request origin is not allowed.');
-    }
+  if (env.CLIENT_ORIGIN) allowedOrigins.push(env.CLIENT_ORIGIN.replace(/\/$/, ''));
+  if (env.CLIENT_URL) allowedOrigins.push(env.CLIENT_URL.replace(/\/$/, ''));
+
+  const origin = req.headers.origin;
+
+  // Allow requests if they have no origin (like Postman) or match our list
+  if (!origin || allowedOrigins.includes(origin)) {
+    return next();
   }
-  next();
-}
+
+  console.warn(`[originCheck] Blocked unauthorized origin: ${origin}`);
+  return res.status(403).json({
+    success: false,
+    message: 'Forbidden: Origin not allowed'
+  });
+};

@@ -54,15 +54,12 @@ export function createApp({
 
   app.disable('x-powered-by');
 
-  // Trust Render's reverse proxy in production.
   if (env.IS_PROD) {
     app.set('trust proxy', 1);
   }
 
-  app.use(helmet());
-
   // ==========================================
-  // 1. ROBUST CORS CONFIGURATION 
+  // 1. CORS MUST BE FIRST
   // ==========================================
   const allowedOrigins = [
     'https://placement-prep-ai-inky.vercel.app',
@@ -70,18 +67,31 @@ export function createApp({
     'http://localhost:3000'
   ];
 
-  // Safely add env variables if they exist
   if (env.CLIENT_ORIGIN) allowedOrigins.push(env.CLIENT_ORIGIN.replace(/\/$/, ''));
   if (env.CLIENT_URL) allowedOrigins.push(env.CLIENT_URL.replace(/\/$/, ''));
 
   app.use(
     cors({
-      origin: allowedOrigins,
+      origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        console.warn(`[CORS Blocked] Origin: ${origin}`);
+        return callback(new Error('Not allowed by CORS'));
+      },
       credentials: true,
       methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'Accept', 'Origin', 'X-Requested-With'],
     })
   );
+
+  // Handle preflight OPTIONS requests for Express 5.x
+  app.options('(.*)', cors());
+
+  // ==========================================
+  // 2. OTHER MIDDLEWARE
+  // ==========================================
+  app.use(helmet());
 
   if (!env.IS_TEST) {
     app.use(morgan('tiny'));
@@ -90,10 +100,9 @@ export function createApp({
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 
-  // Protect state-changing requests against cross-site request forgery.
+  // Ensure origin check uses the exact same logic
   app.use(originCheck);
 
-  // API-wide rate limiting.
   app.use(
     '/api',
     rateLimit({
@@ -112,7 +121,6 @@ export function createApp({
     })
   );
 
-  // Health check.
   app.get('/api/health', (_req, res) => {
     const dbReady = mongoose.connection.readyState === 1;
     res.status(dbReady ? 200 : 503).json({
@@ -121,11 +129,8 @@ export function createApp({
     });
   });
 
-  // Authentication and user routes.
   app.use('/api/auth', createAuthRouter({ authRateLimitMax }));
   app.use('/api/users', createUserRouter({ authRateLimitMax }));
-
-  // AI routes.
   app.use('/api/ai', createAiRouter({ llm, quota, embedder, chatQuota, ingestQuota, vectorMode: retriever.mode }));
   app.use('/api/resumes', resumeRoutes);
   app.use('/api/documents', createDocumentRouter({ embedder, quota: ingestQuota }));
@@ -137,7 +142,6 @@ export function createApp({
   app.use('/api/quizzes', createQuizRouter({ llm, quota: quizQuota, config: aiConfig }));
   app.use('/api/job-analyses', createJobAnalysisRouter({ llm, quota, config: aiConfig }));
 
-  // Keep these last.
   app.use(notFound);
   app.use(errorHandler);
 
