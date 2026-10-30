@@ -26,28 +26,28 @@ import { createPlanRouter, createProgressRouter } from './routes/plan.routes.js'
 import { UserQuota } from './ai/quota.js';
 
 export function createApp({
-  authRateLimitMax = env.AUTH_RATE_LIMIT_MAX,
-  apiRateLimitMax = env.API_RATE_LIMIT_MAX,
+  authRateLimitMax = env.AUTH_RATE_LIMIT_MAX || 10,
+  apiRateLimitMax = env.API_RATE_LIMIT_MAX || 100,
   llm = createLlmProvider(env),
-  quota = new UserQuota({ limit: env.AI_QUOTA_PER_HOUR }),
+  quota = new UserQuota({ limit: env.AI_QUOTA_PER_HOUR || 50 }),
   aiConfig = {
-    retries: env.AI_MAX_RETRIES,
-    retryBaseMs: env.AI_RETRY_BASE_MS,
+    retries: env.AI_MAX_RETRIES || 3,
+    retryBaseMs: env.AI_RETRY_BASE_MS || 1000,
   },
   embedder = createEmbeddingProvider(env),
   retriever = createRetriever(env),
-  chatQuota = new UserQuota({ limit: env.QUESTIONS_PER_HOUR }),
-  ingestQuota = new UserQuota({ limit: env.INGESTIONS_PER_HOUR }),
-  interviewQuota = new UserQuota({ limit: env.INTERVIEW_CALLS_PER_HOUR }),
-  planQuota = new UserQuota({ limit: env.PLAN_GENERATIONS_PER_HOUR }),
-  quizQuota = new UserQuota({ limit: env.QUIZ_GENERATIONS_PER_HOUR }),
+  chatQuota = new UserQuota({ limit: env.QUESTIONS_PER_HOUR || 50 }),
+  ingestQuota = new UserQuota({ limit: env.INGESTIONS_PER_HOUR || 50 }),
+  interviewQuota = new UserQuota({ limit: env.INTERVIEW_CALLS_PER_HOUR || 50 }),
+  planQuota = new UserQuota({ limit: env.PLAN_GENERATIONS_PER_HOUR || 50 }),
+  quizQuota = new UserQuota({ limit: env.QUIZ_GENERATIONS_PER_HOUR || 50 }),
   ragConfig = {
-    topK: env.RAG_TOP_K,
-    numCandidates: env.RAG_NUM_CANDIDATES,
-    minScore: env.RAG_MIN_SCORE,
-    maxContextChars: env.RAG_MAX_CONTEXT_CHARS,
-    retries: env.AI_MAX_RETRIES,
-    retryBaseMs: env.AI_RETRY_BASE_MS,
+    topK: env.RAG_TOP_K || 5,
+    numCandidates: env.RAG_NUM_CANDIDATES || 10,
+    minScore: env.RAG_MIN_SCORE || 0.7,
+    maxContextChars: env.RAG_MAX_CONTEXT_CHARS || 4000,
+    retries: env.AI_MAX_RETRIES || 3,
+    retryBaseMs: env.AI_RETRY_BASE_MS || 1000,
   },
 } = {}) {
   const app = express();
@@ -61,20 +61,19 @@ export function createApp({
 
   app.use(helmet());
 
-  // Allow requests only from the configured frontend origin.
-  // Strip any accidental trailing slash from the environment variable
-  // Hardcode the frontend URLs to guarantee they are permitted
+  // ==========================================
+  // 1. ROBUST CORS CONFIGURATION 
+  // ==========================================
   const allowedOrigins = [
     'https://placement-prep-ai-inky.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000'
   ];
 
-  // If env variables are working, add them as fallbacks safely
+  // Safely add env variables if they exist
   if (env.CLIENT_ORIGIN) allowedOrigins.push(env.CLIENT_ORIGIN.replace(/\/$/, ''));
   if (env.CLIENT_URL) allowedOrigins.push(env.CLIENT_URL.replace(/\/$/, ''));
 
-  // Use the array directly. The cors package will automatically handle everything securely.
   app.use(
     cors({
       origin: allowedOrigins,
@@ -107,8 +106,7 @@ export function createApp({
         success: false,
         error: {
           code: 'RATE_LIMITED',
-          message:
-            'Too many requests. Please slow down and try again in a few minutes.',
+          message: 'Too many requests. Please slow down and try again in a few minutes.',
         },
       },
     })
@@ -117,12 +115,9 @@ export function createApp({
   // Health check.
   app.get('/api/health', (_req, res) => {
     const dbReady = mongoose.connection.readyState === 1;
-
     res.status(dbReady ? 200 : 503).json({
       success: dbReady,
-      data: {
-        status: dbReady ? 'ok' : 'database_unavailable',
-      },
+      data: { status: dbReady ? 'ok' : 'database_unavailable' },
     });
   });
 
@@ -131,77 +126,16 @@ export function createApp({
   app.use('/api/users', createUserRouter({ authRateLimitMax }));
 
   // AI routes.
-  app.use(
-    '/api/ai',
-    createAiRouter({
-      llm,
-      quota,
-      embedder,
-      chatQuota,
-      ingestQuota,
-      vectorMode: retriever.mode,
-    })
-  );
-
+  app.use('/api/ai', createAiRouter({ llm, quota, embedder, chatQuota, ingestQuota, vectorMode: retriever.mode }));
   app.use('/api/resumes', resumeRoutes);
-
-  app.use(
-    '/api/documents',
-    createDocumentRouter({
-      embedder,
-      quota: ingestQuota,
-    })
-  );
-
-  app.use(
-    '/api/chat',
-    createChatRouter({
-      llm,
-      embedder,
-      retriever,
-      quota: chatQuota,
-      config: ragConfig,
-    })
-  );
-
-  app.use(
-    '/api/interviews',
-    createInterviewRouter({
-      llm,
-      quota: interviewQuota,
-      config: aiConfig,
-    })
-  );
-
-  app.use(
-    '/api/preparation-plans',
-    createPlanRouter({
-      llm,
-      quota: planQuota,
-      config: aiConfig,
-    })
-  );
-
+  app.use('/api/documents', createDocumentRouter({ embedder, quota: ingestQuota }));
+  app.use('/api/chat', createChatRouter({ llm, embedder, retriever, quota: chatQuota, config: ragConfig }));
+  app.use('/api/interviews', createInterviewRouter({ llm, quota: interviewQuota, config: aiConfig }));
+  app.use('/api/preparation-plans', createPlanRouter({ llm, quota: planQuota, config: aiConfig }));
   app.use('/api/progress', createProgressRouter());
   app.use('/api/applications', applicationRoutes);
-
-  app.use(
-    '/api/quizzes',
-    createQuizRouter({
-      llm,
-      quota: quizQuota,
-      config: aiConfig,
-    })
-  );
-
-  app.use(
-    '/api/job-analyses',
-    createJobAnalysisRouter({
-      llm,
-      quota,
-      config: aiConfig,
-    })
-  );
+  app.use('/api/quizzes', createQuizRouter({ llm, quota: quizQuota, config: aiConfig }));
+  app.use('/api/job-analyses', createJobAnalysisRouter({ llm, quota, config: aiConfig }));
 
   // Keep these last.
   app.use(notFound);
