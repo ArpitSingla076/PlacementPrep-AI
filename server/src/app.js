@@ -65,6 +65,7 @@ export function createApp({
   // Strip any accidental trailing slash from the environment variable
   const allowedOrigin = env.CLIENT_ORIGIN ? env.CLIENT_ORIGIN.replace(/\/$/, '') : '';
 
+  // The global app.use automatically intercepts and handles OPTIONS preflight requests
   app.use(
     cors({
       origin(origin, callback) {
@@ -81,9 +82,6 @@ export function createApp({
       allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
     })
   );
-
-  // Explicitly handle preflight OPTIONS requests across all routes (Express 5.x syntax)
-  app.options('(.*)', cors());
 
   if (!env.IS_TEST) {
     app.use(morgan('tiny'));
