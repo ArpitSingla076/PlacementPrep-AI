@@ -63,20 +63,21 @@ export function createApp({
 
   // Allow requests only from the configured frontend origin.
   // Strip any accidental trailing slash from the environment variable
-  const allowedOrigin = env.CLIENT_ORIGIN ? env.CLIENT_ORIGIN.replace(/\/$/, '') : '';
+  // Hardcode the frontend URLs to guarantee they are permitted
+  const allowedOrigins = [
+    'https://placement-prep-ai-inky.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
 
-  // The global app.use automatically intercepts and handles OPTIONS preflight requests
+  // If env variables are working, add them as fallbacks safely
+  if (env.CLIENT_ORIGIN) allowedOrigins.push(env.CLIENT_ORIGIN.replace(/\/$/, ''));
+  if (env.CLIENT_URL) allowedOrigins.push(env.CLIENT_URL.replace(/\/$/, ''));
+
+  // Use the array directly. The cors package will automatically handle everything securely.
   app.use(
     cors({
-      origin(origin, callback) {
-        // Requests without an Origin header (e.g. health checks) are allowed.
-        if (!origin || origin === allowedOrigin) {
-          return callback(null, true);
-        }
-
-        console.warn(`[CORS Blocked] Received: ${origin} | Expected: ${allowedOrigin}`);
-        return callback(new Error('Not allowed by CORS'));
-      },
+      origin: allowedOrigins,
       credentials: true,
       methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
