@@ -62,26 +62,28 @@ export function createApp({
   app.use(helmet());
 
   // Allow requests only from the configured frontend origin.
-  // Strips any accidental trailing slash from the environment variable.
+  // Strip any accidental trailing slash from the environment variable
   const allowedOrigin = env.CLIENT_ORIGIN ? env.CLIENT_ORIGIN.replace(/\/$/, '') : '';
 
-  const corsOptions = {
-    origin(origin, callback) {
-      // Requests without an Origin header (e.g. health checks) are allowed.
-      if (!origin || origin === allowedOrigin) {
-        return callback(null, true);
-      }
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // Requests without an Origin header (e.g. health checks) are allowed.
+        if (!origin || origin === allowedOrigin) {
+          return callback(null, true);
+        }
 
-      console.warn(`[CORS Blocked] Received: ${origin} | Expected: ${allowedOrigin}`);
-      return callback(new Error('Not allowed by CORS'));
-    },
-    credentials: true,
-    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-  };
+        console.warn(`[CORS Blocked] Received: ${origin} | Expected: ${allowedOrigin}`);
+        return callback(new Error('Not allowed by CORS'));
+      },
+      credentials: true,
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    })
+  );
 
-  app.use(cors(corsOptions));
-  app.options('*', cors(corsOptions)); // Explicitly handle preflight OPTIONS requests
+  // Explicitly handle preflight OPTIONS requests across all routes (Express 5.x syntax)
+  app.options('(.*)', cors());
 
   if (!env.IS_TEST) {
     app.use(morgan('tiny'));
