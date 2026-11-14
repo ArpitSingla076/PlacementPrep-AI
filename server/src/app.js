@@ -5,11 +5,9 @@ import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import mongoose from 'mongoose';
 import rateLimit from 'express-rate-limit';
-
 import { env } from './config/env.js';
 import { originCheck } from './middleware/originCheck.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
-
 import { createAuthRouter } from './routes/auth.routes.js';
 import { createUserRouter } from './routes/user.routes.js';
 import resumeRoutes from './routes/resume.routes.js';
@@ -24,109 +22,64 @@ import { createQuizRouter } from './routes/quiz.routes.js';
 import { createInterviewRouter } from './routes/interview.routes.js';
 import { createPlanRouter, createProgressRouter } from './routes/plan.routes.js';
 import { UserQuota } from './ai/quota.js';
+import { log } from './utils/logger.js';
 
+/**
+ * createApp() builds the Express app WITHOUT starting a server or opening a DB connection.
+ * That separation is what lets the tests drive the API with supertest.
+ */
 export function createApp({
-  authRateLimitMax = env.AUTH_RATE_LIMIT_MAX || 10,
-  apiRateLimitMax = env.API_RATE_LIMIT_MAX || 100,
-  llm = createLlmProvider(env),
-  quota = new UserQuota({ limit: env.AI_QUOTA_PER_HOUR || 50 }),
-  aiConfig = {
-    retries: env.AI_MAX_RETRIES || 3,
-    retryBaseMs: env.AI_RETRY_BASE_MS || 1000,
-  },
+  authRateLimitMax = env.AUTH_RATE_LIMIT_MAX,
+  apiRateLimitMax = env.API_RATE_LIMIT_MAX,
+  llm = createLlmProvider(env), // injectable so tests can supply a mock provider
+  quota = new UserQuota({ limit: env.AI_QUOTA_PER_HOUR }),
+  aiConfig = { retries: env.AI_MAX_RETRIES, retryBaseMs: env.AI_RETRY_BASE_MS },
+  // ---- RAG dependencies (all injectable for tests)
   embedder = createEmbeddingProvider(env),
   retriever = createRetriever(env),
-  chatQuota = new UserQuota({ limit: env.QUESTIONS_PER_HOUR || 50 }),
-  ingestQuota = new UserQuota({ limit: env.INGESTIONS_PER_HOUR || 50 }),
-  interviewQuota = new UserQuota({ limit: env.INTERVIEW_CALLS_PER_HOUR || 50 }),
-  planQuota = new UserQuota({ limit: env.PLAN_GENERATIONS_PER_HOUR || 50 }),
-  quizQuota = new UserQuota({ limit: env.QUIZ_GENERATIONS_PER_HOUR || 50 }),
+  chatQuota = new UserQuota({ limit: env.QUESTIONS_PER_HOUR }),
+  ingestQuota = new UserQuota({ limit: env.INGESTIONS_PER_HOUR }),
+  interviewQuota = new UserQuota({ limit: env.INTERVIEW_CALLS_PER_HOUR }),
+  planQuota = new UserQuota({ limit: env.PLAN_GENERATIONS_PER_HOUR }),
+  quizQuota = new UserQuota({ limit: env.QUIZ_GENERATIONS_PER_HOUR }),
   ragConfig = {
-    topK: env.RAG_TOP_K || 5,
-    numCandidates: env.RAG_NUM_CANDIDATES || 10,
-    minScore: env.RAG_MIN_SCORE || 0.7,
-    maxContextChars: env.RAG_MAX_CONTEXT_CHARS || 4000,
-    retries: env.AI_MAX_RETRIES || 3,
-    retryBaseMs: env.AI_RETRY_BASE_MS || 1000,
+    topK: env.RAG_TOP_K, numCandidates: env.RAG_NUM_CANDIDATES, minScore: env.RAG_MIN_SCORE, maxContextChars: env.RAG_MAX_CONTEXT_CHARS,
+    retries: env.AI_MAX_RETRIES, retryBaseMs: env.AI_RETRY_BASE_MS,
   },
 } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
+  // Behind Render/Vercel's proxy, req.ip would be the proxy's IP and rate limiting would be useless.
+  if (env.IS_PROD) app.set('trust proxy', 1);
 
-  if (env.IS_PROD) {
-    app.set('trust proxy', 1);
-  }
-
-  // ==========================================
-  // 1. CORS MUST BE FIRST
-  // ==========================================
-  const allowedOrigins = [
-    'https://placement-prep-ai-inky.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ];
-
-  if (env.CLIENT_ORIGIN) allowedOrigins.push(env.CLIENT_ORIGIN.replace(/\/$/, ''));
-  if (env.CLIENT_URL) allowedOrigins.push(env.CLIENT_URL.replace(/\/$/, ''));
-
-  app.use(
-    cors({
-      origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
-        console.warn(`[CORS Blocked] Origin: ${origin}`);
-        return callback(new Error('Not allowed by CORS'));
-      },
-      credentials: true,
-      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'Accept', 'Origin', 'X-Requested-With'],
-    })
-  );
-
-  // Handle preflight OPTIONS requests for Express 5.x
-  app.options('(.*)', cors());
-
-  // ==========================================
-  // 2. OTHER MIDDLEWARE
-  // ==========================================
   app.use(helmet());
-
-  if (!env.IS_TEST) {
-    app.use(morgan('tiny'));
-  }
-
+  // CORS: only the frontend origin(s) in CLIENT_URL may call this API from a browser, with cookies.
+  // The cors middleware answers preflight (OPTIONS) requests for every route, so no separate handler is needed.
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || env.CLIENT_ORIGINS.includes(origin)) return callback(null, true); // no Origin = curl/Postman/health checks
+      log.warn(`[cors] blocked a request from ${origin}. Allowed: ${env.CLIENT_ORIGINS.join(', ')}. If this is your frontend, set CLIENT_URL to it exactly.`);
+      return callback(null, false);
+    },
+    credentials: true,
+  }));
+  if (!env.IS_TEST) app.use(morgan('tiny')); // method, URL, status, time - never request bodies
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
-
-  // Ensure origin check uses the exact same logic
   app.use(originCheck);
 
-  app.use(
-    '/api',
-    rateLimit({
-      windowMs: 15 * 60 * 1000,
-      limit: apiRateLimitMax,
-      standardHeaders: 'draft-7',
-      legacyHeaders: false,
-      skip: (req) => req.path === '/health',
-      message: {
-        success: false,
-        error: {
-          code: 'RATE_LIMITED',
-          message: 'Too many requests. Please slow down and try again in a few minutes.',
-        },
-      },
-    })
-  );
+  // Coarse per-IP guard for the whole API (stricter limits exist on login/register and, per user, on every AI feature).
+  // /health is exempt so uptime monitors never get blocked.
+  app.use('/api', rateLimit({
+    windowMs: 15 * 60 * 1000, limit: apiRateLimitMax, standardHeaders: 'draft-7', legacyHeaders: false,
+    skip: (req) => req.path === '/health',
+    message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down and try again in a few minutes.' } },
+  }));
 
   app.get('/api/health', (_req, res) => {
     const dbReady = mongoose.connection.readyState === 1;
-    res.status(dbReady ? 200 : 503).json({
-      success: dbReady,
-      data: { status: dbReady ? 'ok' : 'database_unavailable' },
-    });
+    res.status(dbReady ? 200 : 503).json({ success: dbReady, data: { status: dbReady ? 'ok' : 'database_unavailable', allowedOrigins: env.CLIENT_ORIGINS } });
   });
 
   app.use('/api/auth', createAuthRouter({ authRateLimitMax }));
@@ -144,6 +97,5 @@ export function createApp({
 
   app.use(notFound);
   app.use(errorHandler);
-
   return app;
 }

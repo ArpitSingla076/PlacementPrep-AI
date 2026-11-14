@@ -4,9 +4,10 @@ import { useAuth } from '../hooks/useAuth.js';
 
 function FullPageSpinner() {
   return (
-    <div className="grid min-h-screen place-items-center" role="status" aria-live="polite">
+    <div className="flex min-h-screen flex-col items-center justify-center" role="status" aria-live="polite">
       <Loader2 className="size-6 animate-spin text-navy-700" aria-hidden="true" />
       <span className="sr-only">Loading your session</span>
+      <p aria-hidden="true" className="mt-3 max-w-xs text-center text-xs text-muted">Connecting to the server. If it was idle this can take up to a minute.</p>
     </div>
   );
 }

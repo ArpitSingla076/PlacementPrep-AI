@@ -14,7 +14,9 @@ const envSchema = z.object({
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   SESSION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
-  CLIENT_URL: z.url().default('http://localhost:5173'),
+  // The frontend's address(es). One value, or several separated by commas (e.g. production + a custom domain).
+  // Quotes, spaces, trailing slashes and paths are tolerated: only the origin (https://host) is used.
+  CLIENT_URL: z.string().default('http://localhost:5173'),
   COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1000), // all /api requests per IP per 15 minutes (a coarse abuse guard)
@@ -87,6 +89,21 @@ const envSchema = z.object({
   MIN_JD_CHARS: z.coerce.number().int().min(10).default(100),
 });
 
+/** "https://a.app/, 'https://b.com'" -> ['https://a.app', 'https://b.com'] (browsers compare the bare origin, so that is all we keep). */
+export function parseOrigins(value) {
+  const origins = String(value).split(',')
+    .map((s) => s.trim().replace(/^["']+|["']+$/g, '').trim())
+    .filter(Boolean)
+    .map((s) => {
+      let url;
+      try { url = new URL(s); } catch { url = null; }
+      if (!url || !/^https?:$/.test(url.protocol)) throw new Error(`Invalid environment configuration:\n  - CLIENT_URL: "${s}" is not a valid http(s) address (example: https://my-app.vercel.app)`);
+      return url.origin;
+    });
+  if (origins.length === 0) throw new Error('Invalid environment configuration:\n  - CLIENT_URL: at least one address is required');
+  return [...new Set(origins)];
+}
+
 export function loadEnv(source = process.env) {
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
@@ -100,7 +117,8 @@ export function loadEnv(source = process.env) {
   }
   return {
     ...env,
-    CLIENT_ORIGIN: new URL(env.CLIENT_URL).origin,
+    CLIENT_ORIGINS: parseOrigins(env.CLIENT_URL),
+    CLIENT_ORIGIN: parseOrigins(env.CLIENT_URL)[0],
     MAX_UPLOAD_BYTES: Math.floor(env.MAX_UPLOAD_MB * 1024 * 1024),
     MAX_DOC_UPLOAD_BYTES: Math.floor(env.MAX_DOC_UPLOAD_MB * 1024 * 1024),
     IS_PROD: env.NODE_ENV === 'production',

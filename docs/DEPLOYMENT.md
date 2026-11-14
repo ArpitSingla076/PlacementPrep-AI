@@ -31,3 +31,15 @@ In every option `CLIENT_URL` must equal the frontend's exact origin: it drives C
 - [ ] `/api/ai/status` shows the model and embedding model as configured.
 - [ ] Atlas index shows **ACTIVE**; upload a small PDF in Documents and ask a question.
 - [ ] Read the Gemini API terms for your plan before real resumes or notes are used.
+
+## Troubleshooting: "Cannot reach the server" / "blocked by CORS policy"
+These browser messages all mean *the browser got no usable answer from the API*. Work through them in this order:
+
+1. **Is the API running?** Open `https://<your-api>.onrender.com/api/health` in a browser (the first request after idle can take up to a minute on the free plan).
+   - A JSON reply with `"status":"ok"` means it is running, and it lists `allowedOrigins`. **That list must contain your frontend's address exactly** (for example `https://my-app.vercel.app`).
+   - An error page, or no reply, means the API is down. Open Render > Logs. A line starting `[fatal]` names the reason. A crashed API sends no CORS headers, so the browser reports a CORS error even though CORS is not the real problem.
+2. **Did the last deploy succeed?** Render keeps serving the *previous* version when a new deploy fails. Check Render > Events for "Deploy failed".
+3. **Does `allowedOrigins` match?** If not, fix `CLIENT_URL` on Render. It accepts one address or several separated by commas, and ignores quotes, spaces and trailing slashes.
+4. **Render logs show `[cors] blocked a request from <address>`**: that address is not in `CLIENT_URL`. Add it.
+5. **Sign-in works but you are logged out on reload**: set `COOKIE_SAMESITE=none` and `NODE_ENV=production`, and test in a normal Chrome or Edge window.
+6. **Frontend still calls the wrong API**: `VITE_API_URL` is read at *build* time. Change it, then Redeploy on Vercel.

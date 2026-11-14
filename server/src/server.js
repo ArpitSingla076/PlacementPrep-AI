@@ -6,6 +6,7 @@ import { recoverStaleDocuments, waitForIngestion } from './services/knowledge/in
 async function main() {
   await connectDB(env.MONGODB_URI);
   console.log('[db] connected');
+  console.log(`[server] allowed frontend origin(s): ${env.CLIENT_ORIGINS.join(', ')}`);
   await recoverStaleDocuments(); // background embedding jobs do not survive a restart
 
   const server = createApp().listen(env.PORT, () => {

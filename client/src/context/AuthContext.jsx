@@ -3,6 +3,19 @@ import * as authService from '../services/authService.js';
 
 export const AuthContext = createContext(null);
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** If the server does not answer at all (asleep on free hosting), wait and retry a few times. A real answer, even 401, is final. */
+async function restoreSession() {
+  for (let attempt = 0; ; attempt++) {
+    try { return await authService.fetchCurrentUser(); }
+    catch (err) {
+      if (err.response || attempt >= 3) throw err;
+      await sleep(4000);
+    }
+  }
+}
+
 /**
  * Holds "who is signed in". status: 'loading' (checking cookie) | 'authed' | 'anon'.
  * On first load we ask the server (GET /auth/me). We cannot read the httpOnly cookie ourselves -
@@ -14,8 +27,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    authService
-      .fetchCurrentUser()
+    restoreSession()
       .then((u) => !cancelled && (setUser(u), setStatus('authed')))
       .catch(() => !cancelled && setStatus('anon'));
     return () => { cancelled = true; };

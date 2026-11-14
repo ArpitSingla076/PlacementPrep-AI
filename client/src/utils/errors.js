@@ -2,7 +2,8 @@
 export function getErrorMessage(error) {
   if (error?.response?.data?.error?.message) return error.response.data.error.message;
   if (error?.code === 'ECONNABORTED') return 'The request took too long. Please try again.';
-  if (error?.request && !error.response) return 'Cannot reach the server. Check your connection and try again.';
+  // No reply at all: the server is asleep or restarting (free hosting), you are offline, or the browser blocked the call (CORS).
+  if (error?.request && !error.response) return 'Cannot reach the server. If it was idle it may be waking up: wait a minute and try again. If this keeps happening, the site owner should check that the server is running and that its CLIENT_URL setting matches this website.';
   return 'Something went wrong. Please try again.';
 }
 
