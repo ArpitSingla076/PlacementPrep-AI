@@ -4,6 +4,8 @@ import { QuizSession } from '../src/models/QuizSession.js';
 import { DocumentChunk } from '../src/models/DocumentChunk.js';
 import { AiError } from '../src/ai/errors.js';
 import { quizSchema } from '../src/ai/schemas/quiz.schema.js';
+import { supportScore } from '../src/ai/rag/support.js';
+import { NOTES } from '../eval/corpus.js';
 import { setupDb, teardownDb, clearDb, makeRagApp, registerAgent, grantConsent, addNotes } from './helpers.js';
 import { quizLlm, fakeEmbedder } from './fixtures.js';
 
@@ -82,8 +84,16 @@ describe('POST /api/quizzes', () => {
   });
 
   it('flags a question as weakly grounded when its answer shares little wording with the passage', async () => {
+    // The quiz picks RANDOM passages, so this test must hold for ANY of them. We use vocabulary that appears nowhere in the sample
+    // notes, and prove it below against the whole corpus (an earlier version used "containers", which overlaps "contain NULL" in one
+    // passage and made the test fail about a third of the time).
+    const explanation = 'The kube-scheduler assigns pods to nodes using taints and tolerations.';
+    const correct = 'The kube-scheduler';
+    const wholeCorpus = Object.values(NOTES).flat(2).join(' ');
+    expect(supportScore(`${explanation} ${correct}`, [wholeCorpus])).toBeLessThan(0.25);
+
     const llm = quizLlm();
-    llm.queue({ questions: [{ sourceN: 1, question: 'What does Kubernetes schedule onto nodes?', options: ['Containers', 'Tables', 'Frames', 'Packets'], correctIndex: 0, explanation: 'Controllers schedule containers onto worker nodes.', topic: 'Orchestration' }] });
+    llm.queue({ questions: [{ sourceN: 1, question: 'Which component assigns pods to cluster nodes?', options: [correct, 'The page table', 'The join operator', 'The TCP stack'], correctIndex: 0, explanation, topic: 'Orchestration' }] });
     const u = await setup({ llm });
     const quiz = await QuizSession.findById((await create(u, { numQuestions: 3 })).body.data.quiz.id);
     expect(quiz.questions[0].weakGrounding).toBe(true);
