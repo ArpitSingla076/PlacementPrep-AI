@@ -79,6 +79,7 @@ export default function AuthPage({ mode }) {
 
           <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-4">
             <Alert>{formError}</Alert>
+            {formError.startsWith('Cannot reach') && <p className="text-xs text-muted"><Link to="/status" className="font-semibold text-navy-800 underline underline-offset-4">Run a connection check</Link> to see exactly what is wrong.</p>}
             {isRegister && (
               <Field label="Full name" value={form.name} onChange={set('name')} error={fieldErrors.name} autoComplete="name" required />
             )}

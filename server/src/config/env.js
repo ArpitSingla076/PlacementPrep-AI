@@ -21,6 +21,8 @@ const envSchema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(15).default(12),
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1000), // all /api requests per IP per 15 minutes (a coarse abuse guard)
   REQUEST_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(180_000), // must exceed AI_TIMEOUT_MS plus retries
+  // How many reverse proxies sit in front of this app (so rate limits see the REAL visitor IP). 1 = Render only; 2 = Vercel proxy + Render.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
 
   // ---- LLM (Milestone 2). Nothing here has a model default on purpose: model IDs change often,

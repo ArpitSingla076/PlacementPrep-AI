@@ -51,7 +51,7 @@ export function createApp({
 
   app.disable('x-powered-by');
   // Behind Render/Vercel's proxy, req.ip would be the proxy's IP and rate limiting would be useless.
-  if (env.IS_PROD) app.set('trust proxy', 1);
+  if (env.IS_PROD) app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
   app.use(helmet());
   // CORS: only the frontend origin(s) in CLIENT_URL may call this API from a browser, with cookies.
@@ -76,6 +76,10 @@ export function createApp({
     skip: (req) => req.path === '/health',
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down and try again in a few minutes.' } },
   }));
+
+  // Never let a browser, CDN or proxy store API responses. Authenticated JSON must not be cached, and a stored error
+  // (for example a 404 from a moment when the server was restarting) must never be replayed to the next request.
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
   app.get('/api/health', (_req, res) => {
     const dbReady = mongoose.connection.readyState === 1;

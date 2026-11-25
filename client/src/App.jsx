@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { PublicOnly, RequireAuth } from './components/RouteGuards.jsx';
 import AppLayout from './layouts/AppLayout.jsx';
 import AuthPage from './pages/AuthPage.jsx';
+import StatusPage from './pages/StatusPage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import InterviewsPage from './pages/InterviewsPage.jsx';
@@ -44,6 +45,7 @@ export default function App() {
         </Route>
       </Route>
 
+      <Route path="/status" element={<StatusPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

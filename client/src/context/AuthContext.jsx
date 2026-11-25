@@ -1,20 +1,11 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import * as authService from '../services/authService.js';
+import { retryWhileWaking } from '../utils/serverWake.js';
 
 export const AuthContext = createContext(null);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** If the server does not answer at all (asleep on free hosting), wait and retry a few times. A real answer, even 401, is final. */
-async function restoreSession() {
-  for (let attempt = 0; ; attempt++) {
-    try { return await authService.fetchCurrentUser(); }
-    catch (err) {
-      if (err.response || attempt >= 3) throw err;
-      await sleep(4000);
-    }
-  }
-}
+/** On page load, ask the server who is signed in. While a free-tier server wakes up (about a minute) keep waiting instead of wrongly showing the login page. */
+const restoreSession = () => retryWhileWaking(() => authService.fetchCurrentUser(), { attempts: 12, delayMs: 5000 });
 
 /**
  * Holds "who is signed in". status: 'loading' (checking cookie) | 'authed' | 'anon'.

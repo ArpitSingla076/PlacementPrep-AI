@@ -18,7 +18,11 @@ export const setCsrfToken = (token) => { csrfToken = token; };
 const UNSAFE = new Set(['post', 'put', 'patch', 'delete']);
 
 api.interceptors.request.use((config) => {
-  if (csrfToken && UNSAFE.has((config.method ?? 'get').toLowerCase())) {
+  const method = (config.method ?? 'get').toLowerCase();
+  // Every GET gets a unique tag. A browser or CDN can then never answer with a stored copy of an earlier failure
+  // (for example a 404 from a moment when the server was restarting). The server ignores the extra parameter.
+  if (method === 'get') config.params = { ...config.params, _t: Date.now() };
+  if (csrfToken && UNSAFE.has(method)) {
     config.headers['X-CSRF-Token'] = csrfToken;
   }
   return config;

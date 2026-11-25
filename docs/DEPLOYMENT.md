@@ -43,3 +43,13 @@ These browser messages all mean *the browser got no usable answer from the API*.
 4. **Render logs show `[cors] blocked a request from <address>`**: that address is not in `CLIENT_URL`. Add it.
 5. **Sign-in works but you are logged out on reload**: set `COOKIE_SAMESITE=none` and `NODE_ENV=production`, and test in a normal Chrome or Edge window.
 6. **Frontend still calls the wrong API**: `VITE_API_URL` is read at *build* time. Change it, then Redeploy on Vercel.
+
+## Recommended: let Vercel forward /api to the server (same-site mode)
+`client/vercel.json` forwards every `/api/...` request to the Render server. When the frontend is built **without** `VITE_API_URL`, the browser only ever talks to the Vercel address, so there is no CORS at all and the login cookie is a normal first-party cookie that every browser accepts.
+1. In Vercel > Settings > Environment Variables, **delete `VITE_API_URL`**, then Redeploy.
+2. In Render set `TRUST_PROXY_HOPS=2` (Vercel + Render are both in front of the app) and, optionally, `COOKIE_SAMESITE=lax`.
+3. Keep `CLIENT_URL` equal to the Vercel address.
+Unverified: Vercel's proxy may cut off requests that take very long (resume analysis can take about a minute). If AI requests fail this way, set `VITE_API_URL` back to the Render address (direct mode still works).
+
+## The "Connection check" page
+Open `https://<your-site>/status` at any time. It contacts the server directly, bypassing every cache, and says in plain words whether the server is asleep, blocking this website, missing its database, or fine.

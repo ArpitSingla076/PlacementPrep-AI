@@ -86,3 +86,24 @@ describe('CLIENT_URL parsing is forgiving about copy-paste mistakes', () => {
     expect(() => loadEnv({ ...base, CLIENT_URL: 'not a url' })).toThrow(/CLIENT_URL.*not a valid http\(s\) address/s);
   });
 });
+
+describe('API responses are never cacheable (a stored error must not be replayed to later requests)', () => {
+  const app = makeApp();
+  it('sets Cache-Control: no-store on success, error and unknown-route responses', async () => {
+    for (const [path, status] of [['/api/health', null], ['/api/auth/me', 401], ['/api/does-not-exist', 404]]) {
+      const res = await request(app).get(path);
+      if (status) expect(res.status).toBe(status);
+      expect(res.headers['cache-control'], path).toBe('no-store');
+    }
+  });
+});
+
+describe('TRUST_PROXY_HOPS', () => {
+  const base = { MONGODB_URI: 'mongodb://x', JWT_SECRET: 'x'.repeat(40) };
+  it('defaults to 1 (Render), accepts 2 (Vercel proxy + Render), and rejects nonsense', () => {
+    expect(loadEnv(base).TRUST_PROXY_HOPS).toBe(1);
+    expect(loadEnv({ ...base, TRUST_PROXY_HOPS: '2' }).TRUST_PROXY_HOPS).toBe(2);
+    expect(() => loadEnv({ ...base, TRUST_PROXY_HOPS: '9' })).toThrow(/TRUST_PROXY_HOPS/);
+    expect(() => loadEnv({ ...base, TRUST_PROXY_HOPS: 'abc' })).toThrow(/TRUST_PROXY_HOPS/);
+  });
+});
