@@ -64,7 +64,7 @@ export function createApp({
     },
     credentials: true,
   }));
-  if (!env.IS_TEST) app.use(morgan('tiny')); // method, URL, status, time - never request bodies
+  if (!env.IS_TEST) app.use(morgan(':method :url :status - :response-time ms origin=:req[origin]')); // never request bodies; origin shows which website called
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
   app.use(originCheck);

@@ -1,47 +1,47 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, CircleAlert, Loader2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, CircleAlert, CircleMinus, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/Button.jsx';
+import { diagnoseConnection } from '../utils/connectionDiagnosis.js';
 
 const API = import.meta.env.VITE_API_URL || '/api';
+const DIRECT = /^https?:\/\//.test(API);
+const TIMEOUT = 70_000;
 
-/** Ask the server's health endpoint directly (bypassing every cache) and record what the browser actually experienced. */
-async function probe() {
+/** One health request. The "_t" tag defeats any cache. mode 'no-cors' succeeds for ANY reply, even one the browser may not read. */
+async function probe(url, mode = 'cors') {
   const started = performance.now();
   try {
-    const res = await fetch(`${API}/health?_t=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(70_000) });
+    const res = await fetch(`${url}?_t=${Date.now()}`, { cache: 'no-store', mode, signal: AbortSignal.timeout(TIMEOUT) });
+    if (mode === 'no-cors') return { reached: true, opaque: true, ms: Math.round(performance.now() - started) };
     const text = await res.text();
     let json = null;
-    try { json = JSON.parse(text); } catch { /* not JSON: not our API */ }
+    try { json = JSON.parse(text); } catch { /* not JSON: not this app */ }
     return { reached: true, status: res.status, json, ms: Math.round(performance.now() - started) };
   } catch (err) {
     return { reached: false, timeout: err?.name === 'TimeoutError', ms: Math.round(performance.now() - started) };
   }
 }
 
-function diagnose(r) {
-  const origin = window.location.origin;
-  if (!r.reached) {
-    return r.timeout
-      ? { tone: 'bad', title: 'The server did not answer within 70 seconds', tips: ['On free hosting the server sleeps when idle and can take a minute to wake: press "Keep trying" below.', 'If it never wakes, open the hosting dashboard (Render) and check the service status and its Logs.'] }
-      : { tone: 'bad', title: 'The browser could not read any reply from the server', tips: ['The server may be asleep or restarting (free hosting). Press "Keep trying" below and wait up to a minute.', 'Or the server is blocking this website (CORS): the server\'s CLIENT_URL must contain ' + origin + '.', 'Or the API address built into this site is wrong (currently: ' + API + ').', 'Open the address above plus /health in a new tab. If it shows JSON there but not here, clear this site\'s data (Chrome: lock icon, Site settings, Clear data) and reload.'] };
-  }
-  const data = r.json?.data;
-  if (!data) return { tone: 'bad', title: 'Something answered (HTTP ' + r.status + ') but it is not this app\'s server', tips: ['The API address may be wrong (currently: ' + API + '), or the hosting platform is showing its own page because the service is not running.', 'Check the hosting dashboard: the service should say Live, and its Logs should show "listening".'] };
-  if (data.status !== 'ok') return { tone: 'warn', title: 'The server is running but cannot reach its database', tips: ['Check the database connection string and that the database allows connections from the server (Atlas: Network Access).'] };
-  if (!(data.allowedOrigins ?? []).includes(origin)) return { tone: 'bad', title: 'The server is running, but it does not allow this website', tips: ['This website is ' + origin + '. The server allows: ' + (data.allowedOrigins ?? []).join(', ') + '.', 'On the hosting dashboard set CLIENT_URL to ' + origin + ' and wait for the redeploy.'] };
-  return { tone: 'ok', title: 'Everything is connected', tips: ['The server answered in ' + r.ms + ' ms and allows this website. You can sign in or register now.'] };
+async function runChecks() {
+  const [direct, noCors, proxy] = await Promise.all([
+    DIRECT ? probe(`${API}/health`) : probe('/api/health'),
+    DIRECT ? probe(`${API}/health`, 'no-cors') : Promise.resolve(undefined),
+    probe('/api/health'),
+  ]);
+  return diagnoseConnection({ origin: window.location.origin, api: API, direct, noCors, proxy });
 }
 
 const TONE = { ok: 'border-ok/40 bg-ok-bg', bad: 'border-bad/40 bg-bad-bg', warn: 'border-warn/40 bg-warn-bg' };
+const STATE = { ok: [CheckCircle2, 'text-ok', 'worked'], fail: [CircleAlert, 'text-bad', 'failed'], skip: [CircleMinus, 'text-muted', 'skipped'] };
 
 export default function StatusPage() {
-  const [state, setState] = useState({ busy: true, result: null, tries: 1 });
+  const [state, setState] = useState({ busy: true, diag: null, tries: 1 });
   const cancelled = useRef(false);
 
   useEffect(() => {
     cancelled.current = false;
-    probe().then((result) => { if (!cancelled.current) setState({ busy: false, result, tries: 1 }); });
+    runChecks().then((diag) => { if (!cancelled.current) setState({ busy: false, diag, tries: 1 }); });
     return () => { cancelled.current = true; };
   }, []);
 
@@ -49,26 +49,26 @@ export default function StatusPage() {
     setState((s) => ({ ...s, busy: true }));
     const limit = keepTrying ? 15 : 1;
     for (let i = 1; i <= limit && !cancelled.current; i++) {
-      const result = await probe();
+      const diag = await runChecks();
       if (cancelled.current) return;
-      setState({ busy: i < limit && diagnose(result).tone !== 'ok', result, tries: i });
-      if (diagnose(result).tone === 'ok') return;
+      setState({ busy: i < limit && diag.tone !== 'ok', diag, tries: i });
+      if (diag.tone === 'ok') return;
       if (i < limit) await new Promise((r) => setTimeout(r, 5000));
     }
     setState((s) => ({ ...s, busy: false }));
   };
 
-  const d = state.result ? diagnose(state.result) : null;
+  const d = state.diag;
   const Icon = d?.tone === 'ok' ? CheckCircle2 : CircleAlert;
 
   return (
     <div className="mx-auto max-w-2xl px-5 py-12">
       <h1 className="text-3xl font-extrabold">Connection check</h1>
-      <p className="mt-2 text-sm text-muted">Tests whether this website can reach its server, and explains what is wrong if it cannot. No sign-in needed.</p>
+      <p className="mt-2 text-sm text-muted">Tests three ways this website can reach its server, and explains what is wrong. No sign-in needed.</p>
 
       <dl className="mt-6 grid grid-cols-1 gap-3 rounded-card border border-line bg-surface p-4 text-sm sm:grid-cols-[9rem_1fr]">
         <dt className="font-semibold text-muted">This website</dt><dd className="break-all">{window.location.origin}</dd>
-        <dt className="font-semibold text-muted">Server address</dt><dd className="break-all">{API.startsWith('http') ? API : window.location.origin + API + ' (forwarded to the server)'}</dd>
+        <dt className="font-semibold text-muted">Server address</dt><dd className="break-all">{DIRECT ? API : window.location.origin + API + ' (forwarded to the server by this site)'}</dd>
       </dl>
 
       <section aria-live="polite" className={`mt-6 rounded-card border p-5 ${d ? TONE[d.tone] : 'border-line bg-surface'}`}>
@@ -77,7 +77,12 @@ export default function StatusPage() {
           <>
             <h2 className="flex items-start gap-2 text-base font-bold"><Icon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />{d.title}</h2>
             <ul className="mt-3 list-disc space-y-1.5 pl-6 text-sm">{d.tips.map((t) => <li key={t}>{t}</li>)}</ul>
-            <p className="mt-3 text-xs text-muted">Attempt {state.tries}{state.result.reached ? ', HTTP ' + state.result.status : ', no readable reply'}.</p>
+            <ul className="mt-4 space-y-1.5 border-t border-black/10 pt-3 text-sm" aria-label="Individual checks">
+              {d.checks.map((c) => { const [CIcon, color, word] = STATE[c.state]; return (
+                <li key={c.name} className="flex items-start gap-2"><CIcon className={`mt-0.5 size-4 shrink-0 ${color}`} aria-hidden="true" /><span><strong>{c.name}:</strong> <span className="sr-only">{word}. </span>{c.detail}</span></li>
+              ); })}
+            </ul>
+            <p className="mt-3 text-xs text-muted">Attempt {state.tries}.</p>
           </>
         )}
       </section>

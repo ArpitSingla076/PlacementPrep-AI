@@ -53,3 +53,10 @@ Unverified: Vercel's proxy may cut off requests that take very long (resume anal
 
 ## The "Connection check" page
 Open `https://<your-site>/status` at any time. It contacts the server directly, bypassing every cache, and says in plain words whether the server is asleep, blocking this website, missing its database, or fine.
+
+## Reading the /status page
+It runs three checks: (1) a direct request to the server, (2) the same request ignoring CORS permissions (succeeds if *any* reply arrives), and (3) a same-site request through this website's own `/api` forwarding. The combination tells you where the break is:
+- **1 fails, 2 fails, 3 works**: your browser or network cannot connect to the server directly. Delete `VITE_API_URL` in Vercel and redeploy to use the same-site path.
+- **1 fails, 2 works**: the server answers, but not with CORS permission (the reply is from the hosting platform, or `CLIENT_URL` is wrong). Check Render > Logs for a `[cors] blocked` line.
+- **everything fails**: asleep, not running, or blocked by a network. Test on a phone with mobile data.
+Render's logs now include `origin=<website>` on every request line, so you can see whether the website's calls arrive at the server at all.
